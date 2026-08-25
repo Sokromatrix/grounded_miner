@@ -10,7 +10,10 @@ pub fn extract_creature_damage_modifiers(path_to_maine: &str) {
     let mut files: Vec<String> = Vec::new();
     resolve_path(path_to_maine, "", &mut files);
     for entry in files {
-        if fs::read_to_string(&entry).unwrap().contains("DamageResist") {
+        if fs::read_to_string(format!("{}{}{}", path_to_maine, CREATURES_DIR, &entry))
+            .unwrap()
+            .contains("DamageResist")
+        {
             println!("{:?}", entry);
         }
     }
