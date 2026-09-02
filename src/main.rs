@@ -4,7 +4,7 @@ mod extract;
 
 fn main() {
     println!("Hello, world!");
-    extract::extract_creature_damage_modifiers(&format!(
+    let creatures = extract::extract_creature_damage_modifiers(&format!(
         "{}{}",
         directories::UserDirs::new()
             .unwrap()
