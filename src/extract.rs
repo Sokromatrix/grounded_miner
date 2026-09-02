@@ -1,10 +1,11 @@
 use serde_json::Value;
-use std::fs;
+use std::{fs, str::FromStr};
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
 
 const CREATURES_DIR: &str = "/Maine/Content/Blueprints/Creatures";
 
+#[derive(Debug, Display, EnumString, PartialEq, Eq, EnumIter)]
 pub enum DamageAugment {
     Fresh,
     Salty,
@@ -12,18 +13,19 @@ pub enum DamageAugment {
     Sour,
 }
 
+#[derive(Debug, Display, EnumString, PartialEq, Eq, EnumIter)]
 pub enum DamageType {
-    Generic,
+    General,
     Stabbing,
     Slashing,
     Chopping,
-    Busting,
+    Smashing,
 }
 
+#[derive(Debug, Display)]
 pub enum ModifierDirection {
     Resistance(ModifierStrength),
     Weakness(ModifierStrength),
-    Undirected,
 }
 
 #[derive(Debug, Display, EnumString, PartialEq, Eq, EnumIter)]
@@ -31,23 +33,24 @@ pub enum ModifierStrength {
     Tiny,
     Small,
     Medium,
-    Large,
     VeryLarge,
+    Large,
     Base,
     Undisclosed,
     IBM,
 }
 
+#[derive(Debug, Display)]
 pub enum DamageModifier {
     DamageAugment(DamageAugment, ModifierDirection),
     DamageType(DamageType, ModifierDirection),
     All(ModifierDirection),
-    Other(String),
+    Other(String, ModifierDirection),
 }
 
 pub struct Creature {
-    name: String,
-    receiving_damage_modifiers: Vec<DamageModifier>,
+    pub name: String,
+    pub receiving_damage_modifiers: Vec<DamageModifier>,
 }
 
 pub fn extract_creature_damage_modifiers(path_to_maine: &str) -> Vec<Creature> {
@@ -71,11 +74,11 @@ pub fn extract_creature_damage_modifiers(path_to_maine: &str) -> Vec<Creature> {
                     receiving_damage_modifiers: Vec::new(),
                 };
                 for modifier in read_creature_damage_modifiers(&file_content).unwrap() {
-                    //println!("{}", modifier);
-                    if modifier.starts_with("DamageResist") {
-                        resolve_damage_modifier(&modifier);
-                    }
+                    creature
+                        .receiving_damage_modifiers
+                        .push(resolve_damage_modifier(&modifier));
                 }
+                creatures.push(creature);
             }
         }
     }
@@ -89,12 +92,16 @@ fn read_creature_damage_modifiers(file_content: &str) -> serde_json::Result<Vec<
     let mut modifiers: Vec<String> = Vec::new();
 
     if let Value::Array(array) = creature {
-        for object in array {
+        for mut object in array {
             if object["Type"] == "StatusEffectComponent" {
-                if let Value::Array(modifier_rows) = &object["Properties"]["DefaultStatusEffects"] {
-                    for modifier_row in modifier_rows {
-                        if let Value::String(modifier) = &modifier_row["RowName"] {
-                            modifiers.push(String::from(modifier));
+                if let Value::Array(modifier_rows) =
+                    object["Properties"]["DefaultStatusEffects"].take()
+                {
+                    for mut modifier_row in modifier_rows {
+                        if let Value::String(modifier) = modifier_row["RowName"].take() {
+                            if modifier.starts_with("DamageResist") {
+                                modifiers.push(modifier);
+                            }
                         }
                     }
                 }
@@ -135,23 +142,35 @@ fn resolve_path(path_to_maine: &str, relative_path: &str, files: &mut Vec<String
     }
 }
 
-pub fn resolve_damage_modifier(modifier_string: &str) {
+pub fn resolve_damage_modifier(modifier_string: &str) -> DamageModifier {
     if !modifier_string.starts_with("DamageResist") {
         panic!("modifier_string doesn't start with DamageResist")
     }
 
-    let mut modifier_string = String::from(&modifier_string[12..]);
-    let mut weakness = false;
-    let mut strength = ModifierStrength::Undisclosed;
-    if modifier_string.contains("Down") {
-        weakness = true;
-        let weakness_identifier_position = modifier_string.find("Down").unwrap();
-        modifier_string = format!(
-            "{}{}",
-            &modifier_string[..weakness_identifier_position],
-            &modifier_string[weakness_identifier_position + "Down".len()..],
-        );
-    }
+    let modifier_string = String::from(&modifier_string[12..]);
+    let (weakness, modifier_string) = {
+        if modifier_string.contains("Down") {
+            let weakness_identifier_position = modifier_string.find("Down").unwrap();
+            let modifier_string = format!(
+                "{}{}",
+                &modifier_string[..weakness_identifier_position],
+                &modifier_string[weakness_identifier_position + "Down".len()..],
+            );
+            (true, modifier_string)
+        } else {
+            (false, modifier_string)
+        }
+    };
+
+    let (strength, modifier_string) = ModifierStrength::iter()
+        .find(|entry| modifier_string.ends_with(entry.to_string().as_str()))
+        .map(|entry| {
+            let modifier_string =
+                String::from(&modifier_string[..modifier_string.len() - entry.to_string().len()]);
+            (entry, modifier_string)
+        })
+        .unwrap_or((ModifierStrength::Undisclosed, modifier_string));
+    /*let mut strength = ModifierStrength::Undisclosed;
 
     for entry in ModifierStrength::iter() {
         if modifier_string.ends_with((&entry).to_string().as_str()) {
@@ -161,22 +180,25 @@ pub fn resolve_damage_modifier(modifier_string: &str) {
             );
             break;
         }
-    }
+    }*/
 
-    println!(
-        "{} {} {}",
-        strength.to_string().as_str(),
-        modifier_string,
-        if weakness { "Weakness" } else { "Resistance" },
-    )
-}
+    let direction = {
+        if weakness {
+            ModifierDirection::Weakness(strength)
+        } else {
+            ModifierDirection::Resistance(strength)
+        }
+    };
 
-pub fn damage_types(all_modifiers: &str) -> Vec<String> {
-    let mut damage_types: Vec<String> = Vec::new();
-    for line in all_modifiers.split('\n') {
-        if !damage_types.iter().any(|e| e == line) {
-            damage_types.push(String::from(line));
+    if modifier_string == "All" {
+        DamageModifier::All(direction)
+    } else {
+        if let Ok(damage_type) = DamageType::from_str(&modifier_string) {
+            DamageModifier::DamageType(damage_type, direction)
+        } else if let Ok(damage_augment) = DamageAugment::from_str(&modifier_string) {
+            DamageModifier::DamageAugment(damage_augment, direction)
+        } else {
+            DamageModifier::Other(modifier_string, direction)
         }
     }
-    damage_types
 }

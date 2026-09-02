@@ -13,4 +13,11 @@ fn main() {
             .unwrap(),
         PATH_TO_MAINE,
     ));
+
+    for creature in creatures {
+        println!("Creature: {}", creature.name);
+        for modifier in creature.receiving_damage_modifiers {
+            println!("  Modifier: {:?}", modifier);
+        }
+    }
 }
