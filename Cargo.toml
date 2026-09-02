@@ -2,6 +2,7 @@
 name = "grounded_miner"
 version = "0.1.0"
 edition = "2024"
+readme = "README.md"
 
 [dependencies]
 directories = "6.0.0"

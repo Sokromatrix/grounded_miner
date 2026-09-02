@@ -170,17 +170,6 @@ pub fn resolve_damage_modifier(modifier_string: &str) -> DamageModifier {
             (entry, modifier_string)
         })
         .unwrap_or((ModifierStrength::Undisclosed, modifier_string));
-    /*let mut strength = ModifierStrength::Undisclosed;
-
-    for entry in ModifierStrength::iter() {
-        if modifier_string.ends_with((&entry).to_string().as_str()) {
-            strength = entry;
-            modifier_string = String::from(
-                &modifier_string[..modifier_string.len() - (&strength).to_string().len()],
-            );
-            break;
-        }
-    }*/
 
     let direction = {
         if weakness {
